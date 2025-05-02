@@ -8,7 +8,8 @@
         "128": "assets/logo.png"
     },
     "background": {
-        "service_worker": "src/background/background.js"
+        "service_worker": "src/background/background.js",
+        "type": "module"
     },
     "content_scripts": [
         {
@@ -23,6 +24,10 @@
     ],
     "permissions": [
         "tabs",
-        "activeTab"
+        "activeTab",
+        "cookies"
+    ],
+    "host_permissions": [
+        "https://www.cursor.com/*"
     ]
 }

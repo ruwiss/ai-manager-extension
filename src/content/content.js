@@ -1,8 +1,5 @@
-// Content script başlangıcı
-console.log("AI Manager Extension content script başlatıldı.");
-
 // Sürüm bilgisi
-const EXTENSION_VERSION = "1.1.0";
+const EXTENSION_VERSION = "1.0.0";
 let siteVersion = null;
 let isVersionMismatch = false;
 
@@ -106,20 +103,34 @@ function handleViewDetailsClick(event) {
   const trElement = findParentTr(event.target);
 
   if (trElement) {
-    // <tr> etiketinin data-token ve data-addon değerlerini al
+    // <tr> etiketinin data-token, data-addon ve data-type değerlerini al
     const dataToken = trElement.getAttribute("data-token");
     const dataAddon = trElement.getAttribute("data-addon");
+    const dataType = trElement.getAttribute("data-type");
 
-    // Arka plan scriptine mesaj gönder
-    chrome.runtime.sendMessage({
-      action: "viewDetails",
-      data: {
-        elementId: event.target.id,
-        url: window.location.href,
-        dataToken: dataToken,
-        dataAddon: dataAddon,
-      },
-    });
+    try {
+      // Arka plan scriptine mesaj gönder
+      chrome.runtime.sendMessage({
+        action: "viewDetails",
+        data: {
+          elementId: event.target.id,
+          url: window.location.href,
+          dataToken: dataToken,
+          dataAddon: dataAddon,
+          dataType: dataType,
+        },
+      });
+    } catch (error) {
+      console.log("Eklenti mesajı gönderilirken hata oluştu:", error.message);
+    }
+
+    // Eğer hesap türü "cursor" ise ve token varsa, kalan kullanım limitini kontrol et
+    if (dataType === "cursor" && dataToken) {
+      // Diyalog açıldıktan sonra Cursor API'sine istek yap
+      setTimeout(() => {
+        fetchCursorUsage(dataToken);
+      }, 500);
+    }
 
     // Diyalog açıldıktan sonra içindeki "open-in-browser" butonunu dinle
     setTimeout(() => {
@@ -250,15 +261,19 @@ function handleOpenInBrowserClick(event) {
   event.preventDefault();
   event.stopPropagation();
 
-  // Arka plan scriptine mesaj gönder
-  chrome.runtime.sendMessage({
-    action: "openInBrowser",
-    data: {
-      elementId: event.target.id,
-      url: window.location.href,
-      versionMismatch: isVersionMismatch, // Sürüm uyumsuzluğu bilgisini gönder
-    },
-  });
+  try {
+    // Arka plan scriptine mesaj gönder
+    chrome.runtime.sendMessage({
+      action: "openInBrowser",
+      data: {
+        elementId: event.target.id,
+        url: window.location.href,
+        versionMismatch: isVersionMismatch, // Sürüm uyumsuzluğu bilgisini gönder
+      },
+    });
+  } catch (error) {
+    console.log("Eklenti mesajı gönderilirken hata oluştu:", error.message);
+  }
 
   // Eğer sürüm uyumlu ise, butona preventClick özniteliği ekle
   if (!isVersionMismatch) {
@@ -358,8 +373,72 @@ function showVersionAlert(newVersion) {
   }, 300); // Diyaloğun tam olarak açılması için biraz bekleyelim
 }
 
+/**
+ * Cursor API'sinden kullanım bilgilerini çeken fonksiyon
+ * @param {string} token - Cursor hesabının token değeri
+ */
+function fetchCursorUsage(token) {
+  console.log("Cursor kullanım bilgileri alınıyor...");
+
+  // Token'ı decode et
+  let userId = "";
+
+  try {
+    // Token'ı "%3A%3A" ile böl
+    const parts = token.split("%3A%3A");
+    if (parts.length >= 2) {
+      // İlk kısım userId
+      userId = parts[0];
+      console.log("User ID:", userId);
+    } else {
+      console.error("Token formatı beklendiği gibi değil");
+      return;
+    }
+  } catch (error) {
+    console.error("Token işlenirken hata oluştu:", error);
+    return;
+  }
+
+  if (!userId) {
+    console.error("Token'dan gerekli bilgiler alınamadı");
+    return;
+  }
+
+  try {
+    // Background script'e mesaj gönder
+    chrome.runtime.sendMessage(
+      {
+        action: "fetchCursorUsage",
+        data: {
+          userId: userId,
+          token: token,
+        },
+      },
+      function (response) {
+        // İlk yanıtı al
+        console.log("Cursor API isteği başlatıldı, işleniyor:", response);
+      }
+    );
+  } catch (error) {
+    console.error("Background script'e mesaj gönderilirken hata oluştu:", error);
+  }
+}
+
 // Sayfa yüklendiğinde dinleyicileri başlat
 function initListeners() {
+  listenForViewDetailsClicks();
+  listenForOpenInBrowserClicks();
+}
+
+// Hesapları kontrol eden fonksiyon
+function checkAccounts() {
+  console.log("Hesaplar kontrol ediliyor...");
+  // Burada hesapları kontrol etme işlemleri yapılabilir
+}
+
+// Tüm olay dinleyicilerini ekleyen fonksiyon
+function addEventListeners() {
+  console.log("Olay dinleyicileri ekleniyor...");
   listenForViewDetailsClicks();
   listenForOpenInBrowserClicks();
 }
@@ -370,3 +449,33 @@ if (document.readyState === "loading") {
 } else {
   initListeners();
 }
+
+// Background script'ten gelen mesajları dinle
+chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
+  console.log("Content script mesaj aldı:", message);
+
+  if (message.action === "cursorUsageResult") {
+    const result = message.data;
+
+    if (result && result.success) {
+      console.log("Kullanım bilgisi alındı:", result.usageText);
+
+      // Diyalogdaki remaining-limit elementini bul ve güncelle
+      const remainingLimitElement = document.getElementById("remaining-limit");
+      const remainingLimitValueElement = document.getElementById("remaining-limit-value");
+
+      if (remainingLimitElement && remainingLimitValueElement) {
+        // hidden class'ını kaldır
+        remainingLimitElement.classList.remove("hidden");
+
+        // Değeri güncelle
+        remainingLimitValueElement.textContent = result.usageText;
+      }
+    } else {
+      console.error("Kullanım bilgisi alınamadı:", result ? result.error : "Yanıt alınamadı");
+    }
+  }
+
+  // Yanıt gönder (gerekirse)
+  return true;
+});
