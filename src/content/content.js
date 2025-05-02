@@ -147,17 +147,24 @@ function listenForDialogOpenInBrowserButton() {
   if (dialogOpenInBrowserButton) {
     console.log("Diyalog içinde open-in-browser butonu bulundu");
 
+    // Butona preventClick özniteliği ekle
+    if (!isVersionMismatch) {
+      dialogOpenInBrowserButton.setAttribute("preventClick", "true");
+      console.log("Diyalog içindeki open-in-browser butonuna preventClick özniteliği eklendi");
+    }
+
     // Butona tıklama olayı ekle
     dialogOpenInBrowserButton.addEventListener("click", function (event) {
       console.log("Diyalog içindeki open-in-browser butonuna tıklandı");
 
-      // Eğer sürüm uyumsuzluğu varsa, güncelleme uyarısını göster
-      if (isVersionMismatch && siteVersion) {
+      // Eğer sürüm uyumlu ise, uyarı göster
+      if (!isVersionMismatch) {
+        console.log("Diyalog içinde: Sürüm uyumlu, preventClick özniteliği eklenmiş durumda");
+      } else {
+        // Sürüm uyumlu değilse, uyarıyı göster
         showVersionAlert(siteVersion);
+        console.log("Diyalog içinde: Sürüm uyumlu değil, uyarı gösterildi");
       }
-
-      // Orijinal tıklama olayının normal şekilde devam etmesine izin ver
-      // event.stopPropagation(); // Eğer orijinal olayı durdurmak isterseniz bu satırı açın
     });
   }
 }
@@ -239,18 +246,29 @@ function listenForOpenInBrowserClicks() {
  * open-in-browser tıklama olayını işleyen fonksiyon
  */
 function handleOpenInBrowserClick(event) {
+  // Varsayılan tıklama davranışını engelle
+  event.preventDefault();
+  event.stopPropagation();
+
   // Arka plan scriptine mesaj gönder
   chrome.runtime.sendMessage({
     action: "openInBrowser",
     data: {
       elementId: event.target.id,
       url: window.location.href,
+      versionMismatch: isVersionMismatch, // Sürüm uyumsuzluğu bilgisini gönder
     },
   });
 
-  // Eğer sürüm uyumsuzluğu varsa, güncelleme uyarısını göster
-  if (isVersionMismatch && siteVersion) {
+  // Eğer sürüm uyumlu ise, butona preventClick özniteliği ekle
+  if (!isVersionMismatch) {
+    const openInBrowserButton = event.target.closest("#open-in-browser") || event.target;
+    openInBrowserButton.setAttribute("preventClick", "true");
+    console.log("open-in-browser butonuna preventClick özniteliği eklendi");
+  } else {
+    // Sürüm uyumlu değilse, uyarıyı göster
     showVersionAlert(siteVersion);
+    console.log("Sürüm uyumlu değil, uyarı gösterildi");
   }
 }
 
