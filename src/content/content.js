@@ -26,15 +26,15 @@ function checkVersion() {
       siteVersion = result.siteVersion;
       isVersionMismatch = !result.isCompatible;
     } else {
-      // Test için meta etiketi oluşturalım
+      // Meta etiketi bulunamadı, test için bir tane oluşturalım
       const head = document.head || document.getElementsByTagName("head")[0];
       const meta = document.createElement("meta");
       meta.setAttribute("name", "extension-version");
-      meta.setAttribute("content", "1.1.0"); // Farklı bir sürüm belirtelim
+      meta.setAttribute("content", "1.0.0"); // Test için farklı bir sürüm
       head.appendChild(meta);
 
       // Global değişkenleri güncelle
-      siteVersion = "1.0.0"; // Burada farklı bir sürüm belirtelim ki uyumsuzluk oluşsun
+      siteVersion = "1.0.0";
       isVersionMismatch = true;
     }
 
@@ -43,12 +43,6 @@ function checkVersion() {
       action: "versionCheck",
       data: result,
     });
-
-    // Sayfa yüklendikten sonra new-version-alert elementini kontrol et
-    setTimeout(() => {
-      // Artık checkOrCreateVersionAlert fonksiyonunu çağırmıyoruz
-      // Sadece mevcut elementi bulup kullanacağız
-    }, 1000);
   }, 500);
 }
 
@@ -279,6 +273,8 @@ function showVersionAlert(newVersion) {
 
     // Diyalog içinde "new-version-alert" ID'li elementi ara
     for (const container of dialogContainers) {
+      console.log("Diyalog içeriği:", container.innerHTML);
+
       const alertInDialog = container.querySelector("#new-version-alert");
       if (alertInDialog) {
         alertElement = alertInDialog;
@@ -298,6 +294,7 @@ function showVersionAlert(newVersion) {
     // Eğer diyalog içinde bulunamadıysa, tüm sayfada ara
     if (!alertElement) {
       alertElement = document.querySelector("#new-version-alert");
+      console.log("Sayfa genelinde new-version-alert elementi arandı:", alertElement ? "bulundu" : "bulunamadı");
     }
 
     if (alertElement) {
@@ -332,16 +329,13 @@ function showVersionAlert(newVersion) {
         }
       } else {
         // Paragraf yoksa oluştur
+        console.log("Paragraf elementi bulunamadı, yeni bir paragraf oluşturuluyor");
         const newParagraph = document.createElement("p");
         newParagraph.textContent = `Yeni bir sürüm mevcut: ${newVersion}`;
         alertElement.appendChild(newParagraph);
-        console.log("Yeni paragraf oluşturuldu");
       }
     } else {
-      console.log(
-        "Alert elementi bulunamadı, diyalog içeriği:",
-        dialogContainers.map((d) => d.innerHTML)
-      );
+      console.log("Alert elementi bulunamadı. Diyalog içerikleri:", dialogContainers.map((d) => d.innerHTML.substring(0, 100) + "...").join("\n"));
     }
   }, 300); // Diyaloğun tam olarak açılması için biraz bekleyelim
 }
