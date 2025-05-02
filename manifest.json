@@ -1,0 +1,28 @@
+{
+    "manifest_version": 3,
+    "name": "AI Manager Extension",
+    "version": "1.0.0",
+    "description": "AI Manager için Chrome eklentisi",
+    "icons": {
+        "48": "assets/logo.png",
+        "128": "assets/logo.png"
+    },
+    "background": {
+        "service_worker": "src/background/background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "http://localhost:3000/*"
+            ],
+            "js": [
+                "src/content/content.js"
+            ],
+            "run_at": "document_start"
+        }
+    ],
+    "permissions": [
+        "tabs",
+        "activeTab"
+    ]
+}
