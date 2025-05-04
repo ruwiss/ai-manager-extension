@@ -25,6 +25,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       });
       break;
+    case "refreshWindsurfToken":
+      console.log("Windsurf token yenileme isteği alındı");
+      // Hemen bir yanıt gönder, bağlantının kapanmasını önlemek için
+      sendResponse({ processing: true });
+
+      // Sonra asıl işlemi başlat
+      refreshWindsurfToken(message.data).then((result) => {
+        // chrome.tabs.sendMessage ile content script'e yanıt gönder
+        if (sender.tab && sender.tab.id) {
+          chrome.tabs.sendMessage(sender.tab.id, {
+            action: "refreshWindsurfTokenResult",
+            data: result,
+          });
+        }
+      });
+      break;
+    case "viewDetails":
+      console.log("View Details mesajı alındı:", message.data);
+      // viewDetails mesajı işlendi
+      break;
     default:
       console.log("Bilinmeyen mesaj tipi:", message.action);
   }
@@ -142,5 +162,69 @@ function fetchCursorUsage(data) {
       console.error("Cookie ayarlanırken hata oluştu:", error);
       reject({ success: false, error: error.message });
     }
+  });
+}
+
+/**
+ * Windsurf token'i yenileyen fonksiyon
+ * @param {Object} data - İstek verileri
+ * @returns {Promise<Object>} - İşlem sonucunu içeren Promise
+ */
+function refreshWindsurfToken(data) {
+  return new Promise((resolve, reject) => {
+    const { refreshToken } = data;
+    const apiKey = "AIzaSyDsOl-1XpT5err0Tcnx8FFod1H8gVGIycY"; // Sabit API Key
+
+    console.log("Refreshing Windsurf token...");
+    console.log("Refresh Token:", refreshToken);
+
+    // Token boşsa hata döndür
+    if (!refreshToken) {
+      console.error("Refresh token is empty");
+      resolve({ success: false, error: "Refresh token is empty" });
+      return;
+    }
+
+    // API isteği yap
+    fetch("https://securetoken.googleapis.com/v1/token?key=" + apiKey, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: `grant_type=refresh_token&refresh_token=${refreshToken}`,
+    })
+      .then((response) => {
+        console.log("Fetch status code:", response.status);
+
+        if (response.ok) {
+          return response.json();
+        } else {
+          throw new Error(`API request failed. Status code: ${response.status}`);
+        }
+      })
+      .then((data) => {
+        console.log("Windsurf API response received");
+
+        if (data && data.access_token) {
+          console.log("Access token successfully obtained");
+          resolve({
+            success: true,
+            accessToken: data.access_token,
+          });
+        } else {
+          console.error("Failed to get access token");
+          resolve({
+            success: false,
+            error: "Failed to get access token",
+          });
+        }
+      })
+      .catch((error) => {
+        console.error("Fetch error:", error);
+        reject({
+          success: false,
+          error: error.message,
+        });
+      });
   });
 }

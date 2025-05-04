@@ -132,6 +132,40 @@ function handleViewDetailsClick(event) {
       }, 500);
     }
 
+    // Eğer hesap türü "windsurf" ise ve token varsa, token-copy-button butonunu göster
+    if (dataType === "windsurf" && dataToken) {
+      // Diyalog açıldıktan sonra token-copy-button butonunu göster
+      setTimeout(() => {
+        const tokenCopyButton = document.querySelector("#token-copy-button");
+        if (tokenCopyButton && dataToken.trim() !== "") {
+          // hidden class'ı varsa kaldır
+          tokenCopyButton.classList.remove("hidden");
+          console.log("Token copy button is now visible for windsurf account");
+
+          // Butona tıklama olayı ekle (eğer yoksa)
+          if (!tokenCopyButton.hasAttribute("windsurf-listener-added")) {
+            tokenCopyButton.setAttribute("windsurf-listener-added", "true");
+            console.log("Added click listener to token copy button");
+
+            tokenCopyButton.addEventListener("click", function () {
+              console.log("Token copy button clicked, requesting token refresh");
+              // Background service'e token yenileme isteği gönder
+              chrome.runtime.sendMessage({
+                action: "refreshWindsurfToken",
+                data: {
+                  refreshToken: dataToken,
+                },
+              });
+
+              // Butonu disabled yap ve "Yenileniyor..." metnini göster
+              tokenCopyButton.disabled = true;
+              tokenCopyButton.textContent = "Getting token...";
+            });
+          }
+        }
+      }, 500);
+    }
+
     // Diyalog açıldıktan sonra içindeki "open-in-browser" butonunu dinle
     setTimeout(() => {
       listenForDialogOpenInBrowserButton();
@@ -473,6 +507,36 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
       }
     } else {
       console.error("Kullanım bilgisi alınamadı:", result ? result.error : "Yanıt alınamadı");
+    }
+  } else if (message.action === "refreshWindsurfTokenResult") {
+    console.log("Windsurf token refresh result received:", message.data);
+
+    // Token-copy-button butonunu bul
+    const tokenCopyButton = document.querySelector("#token-copy-button");
+
+    if (tokenCopyButton) {
+      if (message.data.success) {
+        // Access token'ı panoya kopyala
+        navigator.clipboard
+          .writeText(message.data.accessToken)
+          .then(() => {
+            // Kopyalama başarılı olduğunda buton metnini değiştir ve disabled bırak
+            console.log("Access token copied to clipboard successfully");
+            tokenCopyButton.textContent = "Copied!";
+            // Buton bir kez kullanıldıktan sonra kalıcı olarak devre dışı bırakılır
+            tokenCopyButton.disabled = true;
+          })
+          .catch((err) => {
+            console.error("Error copying to clipboard:", err);
+            tokenCopyButton.textContent = "Error!";
+            tokenCopyButton.disabled = false;
+          });
+      } else {
+        // Hata durumunda
+        console.error("Failed to refresh token:", message.data.error);
+        tokenCopyButton.textContent = "Error!";
+        tokenCopyButton.disabled = false;
+      }
     }
   }
 
