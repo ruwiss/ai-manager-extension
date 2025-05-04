@@ -25,9 +25,11 @@
     "permissions": [
         "tabs",
         "activeTab",
-        "cookies"
+        "cookies",
+        "scripting"
     ],
     "host_permissions": [
-        "https://www.cursor.com/*"
+        "https://www.cursor.com/*",
+        "https://windsurf.com/*"
     ]
 }

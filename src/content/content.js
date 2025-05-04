@@ -116,7 +116,7 @@ function handleViewDetailsClick(event) {
       timestamp: Date.now(),
     };
 
-    console.log("Saved account data to window.lastViewedAccountData:", `type=${dataType}, token exists=${!!dataToken}, addon=${dataAddon}`);
+    console.log("Saved account data to window.lastViewedAccountData:", `type=${dataType}, token exists=${!!dataToken}, addon exists=${!!dataAddon}`);
 
     try {
       // Arka plan scriptine mesaj gönder
@@ -167,7 +167,7 @@ function handleViewDetailsClick(event) {
                 },
               });
 
-              // Butonu disabled yap ve "Yenileniyor..." metnini göster
+              // Butonu disabled yap ve "Getting token..." metnini göster
               tokenCopyButton.disabled = true;
               tokenCopyButton.textContent = "Getting token...";
             });
@@ -206,27 +206,8 @@ function listenForDialogOpenInBrowserButton() {
     // Orijinal onclick fonksiyonunu tamamen kaldır
     dialogOpenInBrowserButton.onclick = null;
 
-    // Orijinal addEventListener fonksiyonunu saklayalım
-    const originalAddEventListener = dialogOpenInBrowserButton.addEventListener;
-
-    // addEventListener fonksiyonunu override edelim, sitenin yeni event listener eklemesini engeller
-    dialogOpenInBrowserButton.addEventListener = function (type, listener, options) {
-      if (type === "click") {
-        console.log("Website tried to add a click listener to the button, prevented");
-        return;
-      }
-      return originalAddEventListener.call(this, type, listener, options);
-    };
-
-    // Tüm event handler'ları kaldıralım
-    const clone = dialogOpenInBrowserButton.cloneNode(true);
-    dialogOpenInBrowserButton.parentNode.replaceChild(clone, dialogOpenInBrowserButton);
-
-    // Yeni elemana referansı güncelleyelim
-    const newButton = clone;
-
     // Diyalog içindeki tüm tr elementlerini bulalım ve loglayalım
-    const dialogContainer = newButton.closest(".dialog, .modal, .popup");
+    const dialogContainer = dialogOpenInBrowserButton.closest(".dialog, .modal, .popup");
     if (dialogContainer) {
       const allTrElements = dialogContainer.querySelectorAll("tr");
       console.log(`Found ${allTrElements.length} TR elements in dialog`);
@@ -235,7 +216,8 @@ function listenForDialogOpenInBrowserButton() {
       allTrElements.forEach((tr, index) => {
         const type = tr.getAttribute("data-type");
         const token = tr.getAttribute("data-token");
-        console.log(`TR #${index}: type=${type || "not set"}, token exists=${!!token}`);
+        const addon = tr.getAttribute("data-addon");
+        console.log(`TR #${index}: type=${type || "not set"}, token exists=${!!token}, addon exists=${!!addon}`);
       });
     } else {
       console.log("Could not find dialog container");
@@ -245,23 +227,26 @@ function listenForDialogOpenInBrowserButton() {
     // Bu bilgiler genelde diyalog başlığında veya gizli bir alanda bulunabilir
     let dataType = null;
     let dataToken = null;
+    let dataAddon = null;
 
     // TR elementini bulmaya çalışalım
-    const trElement = findParentTr(newButton);
+    const trElement = findParentTr(dialogOpenInBrowserButton);
 
     // TR elementinden type ve token değerlerini almayı deneyelim
     if (trElement) {
       dataType = trElement.getAttribute("data-type");
       dataToken = trElement.getAttribute("data-token");
-      console.log(`Account type from TR: ${dataType || "not found"}, token available: ${dataToken ? "yes" : "no"}`);
+      dataAddon = trElement.getAttribute("data-addon");
+      console.log(`Account type from TR: ${dataType || "not found"}, token available: ${dataToken ? "yes" : "no"}, addon available: ${dataAddon ? "yes" : "no"}`);
     } else {
       console.log("TR element not found, trying to find data from dialog context");
 
       // TR bulunamadıysa, diyalog içinde data-type ve data-token öznitelikleri olan başka elementler arayalım
-      const dialogContainer = newButton.closest(".dialog, .modal, .popup");
+      const dialogContainer = dialogOpenInBrowserButton.closest(".dialog, .modal, .popup");
       if (dialogContainer) {
         const elementsWithType = dialogContainer.querySelectorAll("[data-type]");
         const elementsWithToken = dialogContainer.querySelectorAll("[data-token]");
+        const elementsWithAddon = dialogContainer.querySelectorAll("[data-addon]");
 
         if (elementsWithType.length > 0) {
           dataType = elementsWithType[0].getAttribute("data-type");
@@ -272,23 +257,29 @@ function listenForDialogOpenInBrowserButton() {
           dataToken = elementsWithToken[0].getAttribute("data-token");
           console.log(`Found data-token (exists: ${!!dataToken}) from another element in dialog`);
         }
+
+        if (elementsWithAddon.length > 0) {
+          dataAddon = elementsWithAddon[0].getAttribute("data-addon");
+          console.log(`Found data-addon (exists: ${!!dataAddon}) from another element in dialog`);
+        }
       }
     }
 
     // Alternatif olarak, handleViewDetailsClick'te kullanılan dataType ve dataToken değerlerini saklayalım
     // ve burada kullanalım
-    if ((!dataType || !dataToken) && window.lastViewedAccountData) {
-      dataType = window.lastViewedAccountData.dataType;
-      dataToken = window.lastViewedAccountData.dataToken;
-      console.log(`Using cached account data - type: ${dataType}, token exists: ${!!dataToken}`);
+    if (window.lastViewedAccountData) {
+      if (!dataType) dataType = window.lastViewedAccountData.dataType;
+      if (!dataToken) dataToken = window.lastViewedAccountData.dataToken;
+      if (!dataAddon) dataAddon = window.lastViewedAccountData.dataAddon;
+      console.log(`Using cached account data - type: ${dataType}, token exists: ${!!dataToken}, addon exists: ${!!dataAddon}`);
     }
 
     // Eğer type ve token değerleri varsa, butona tıklama olayı ekle
-    if (dataType && dataToken) {
-      console.log(`Account data found - type: ${dataType}, token available: ${dataToken ? "yes" : "no"}`);
+    if (dataType) {
+      console.log(`Account data found - type: ${dataType}, token available: ${dataToken ? "yes" : "no"}, addon available: ${dataAddon ? "yes" : "no"}`);
 
       // Butona tıklama olayı ekle
-      newButton.addEventListener(
+      dialogOpenInBrowserButton.addEventListener(
         "click",
         function (event) {
           // Varsayılan davranışı ve event propagasyonu engelle
@@ -305,6 +296,7 @@ function listenForDialogOpenInBrowserButton() {
               data: {
                 dataType: dataType,
                 dataToken: dataToken,
+                dataAddon: dataAddon,
                 url: window.location.href,
               },
             },
@@ -323,7 +315,7 @@ function listenForDialogOpenInBrowserButton() {
         true
       ); // Capture phase'de event'i yakala
     } else {
-      console.log("Could not find required data-type or data-token attributes for open-in-browser functionality");
+      console.log("Could not find required data-type attribute for open-in-browser functionality");
     }
   }
 }
@@ -435,36 +427,27 @@ function handleOpenInBrowserClick(event) {
   // Orijinal onclick fonksiyonunu tamamen kaldır
   openInBrowserButton.onclick = null;
 
-  // Web sitesinin olası click handler'larını devre dışı bırak
-  setTimeout(() => {
-    // Elementi klonlayarak tüm handler'ları temizleme
-    if (openInBrowserButton.parentNode) {
-      const clone = openInBrowserButton.cloneNode(true);
-      openInBrowserButton.parentNode.replaceChild(clone, openInBrowserButton);
-
-      // Gerekirse yeni klona bizim click handler'ımızı ekle
-      clone.addEventListener("click", handleOpenInBrowserClick, true);
-    }
-  }, 0);
-
   const trElement = findParentTr(openInBrowserButton);
 
   let dataType = null;
   let dataToken = null;
+  let dataAddon = null;
 
   // tr elementinden type ve token değerlerini al
   if (trElement) {
     dataType = trElement.getAttribute("data-type");
     dataToken = trElement.getAttribute("data-token");
-    console.log(`Account type: ${dataType}, token available: ${dataToken ? "yes" : "no"}`);
+    dataAddon = trElement.getAttribute("data-addon");
+    console.log(`Account type: ${dataType}, token available: ${dataToken ? "yes" : "no"}, addon available: ${dataAddon ? "yes" : "no"}`);
   } else if (window.lastViewedAccountData) {
     // Son görüntülenen hesap verilerini kullan
     dataType = window.lastViewedAccountData.dataType;
     dataToken = window.lastViewedAccountData.dataToken;
-    console.log(`Using cached account data - type: ${dataType}, token exists: ${!!dataToken}`);
+    dataAddon = window.lastViewedAccountData.dataAddon;
+    console.log(`Using cached account data - type: ${dataType}, token exists: ${!!dataToken}, addon exists: ${!!dataAddon}`);
   }
 
-  if (dataType && dataToken) {
+  if (dataType) {
     try {
       console.log(`Sending openInBrowser message for ${dataType} account`);
       // Arka plan scriptine mesaj gönder
@@ -476,6 +459,7 @@ function handleOpenInBrowserClick(event) {
             url: window.location.href,
             dataType: dataType,
             dataToken: dataToken,
+            dataAddon: dataAddon,
           },
         },
         function (response) {
@@ -490,7 +474,7 @@ function handleOpenInBrowserClick(event) {
       console.log("Error sending extension message:", error.message);
     }
   } else {
-    console.log("Cannot open in browser: missing data-type or data-token");
+    console.log("Cannot open in browser: missing data-type");
   }
 
   // Ek önlem olarak, event'i durdurduktan sonra return false ile fonksiyonu sonlandır
