@@ -6,11 +6,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Mesaj tipine göre işlem yap
   switch (message.action) {
     case "openInBrowser":
-      console.log("Open In Browser mesajı alındı:", message.data);
-      // Hiçbir durumda yeni sekme açılmayacak
+      console.log("Open In Browser message received:", message.data);
+
+      // Type ve token değerlerini al
+      const { dataType, dataToken } = message.data;
+      console.log("Data Type:", dataType);
+      console.log("Data Token:", dataToken ? "exists (length: " + dataToken.length + ")" : "null or empty");
+
+      // Hemen yanıt verelim ki port kapanmasın
+      sendResponse({ processing: true });
+
+      // Type değerine göre farklı işlemler yap
+      if (dataType && dataType.toLowerCase() === "cursor" && dataToken) {
+        console.log("Opening Cursor account in browser");
+        openCursorInBrowser(dataToken)
+          .then((tab) => {
+            console.log("Successfully opened Cursor in browser, tab id:", tab.id);
+            // Burada ek işlemler yapılabilir
+          })
+          .catch((error) => {
+            console.error("Error opening Cursor:", error);
+          });
+      } else {
+        console.log(`No specific browser action for this account type or missing token. Type: ${dataType}, Token exists: ${!!dataToken}`);
+      }
       break;
     case "fetchCursorUsage":
-      console.log("Cursor kullanım bilgisi isteği alındı");
+      console.log("Cursor usage information request received");
       // Hemen bir yanıt gönder, bağlantının kapanmasını önlemek için
       sendResponse({ processing: true });
 
@@ -50,8 +72,60 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   // Asenkron yanıt vermek istiyorsanız true döndürün
-  return false;
+  return true;
 });
+
+/**
+ * Cursor hesabını tarayıcıda açan fonksiyon
+ * @param {string} token - Cursor token
+ */
+function openCursorInBrowser(token) {
+  if (!token) {
+    throw new Error("Token is required to open Cursor in browser");
+  }
+
+  return new Promise((resolve, reject) => {
+    // Önce cookie'yi ayarla
+    chrome.cookies.set(
+      {
+        url: "https://www.cursor.com",
+        name: "WorkosCursorSessionToken",
+        value: token,
+        domain: "www.cursor.com",
+        path: "/",
+        secure: true,
+        httpOnly: false,
+        sameSite: "no_restriction",
+      },
+      function (cookie) {
+        console.log("Cursor cookie set:", cookie);
+
+        if (chrome.runtime.lastError) {
+          console.error("Cookie setting error:", chrome.runtime.lastError);
+          reject(new Error(`Failed to set cookie: ${chrome.runtime.lastError.message}`));
+          return;
+        }
+
+        // Cookie başarıyla ayarlandıysa, yeni sekme aç
+        if (cookie) {
+          chrome.tabs.create({ url: "https://www.cursor.com/settings" }, function (tab) {
+            if (chrome.runtime.lastError) {
+              console.error("Error opening tab:", chrome.runtime.lastError);
+              reject(new Error(`Failed to open tab: ${chrome.runtime.lastError.message}`));
+              return;
+            }
+
+            console.log("Opened Cursor settings page in new tab:", tab.id);
+            resolve(tab);
+          });
+        } else {
+          console.error("Failed to set Cursor cookie");
+          reject(new Error("Failed to set Cursor cookie"));
+        }
+      }
+    );
+  });
+}
 
 /**
  * Cursor API'sinden kullanım bilgilerini çeken fonksiyon
@@ -62,12 +136,12 @@ function fetchCursorUsage(data) {
   return new Promise((resolve, reject) => {
     const { userId, token } = data;
 
-    console.log("Cursor kullanım bilgileri alınıyor...");
+    console.log("Cursor usage information retrieval...");
     console.log("User ID:", userId);
-    console.log("Token değeri:", token);
+    console.log("Token value:", token);
 
     // Önce cookie'yi ayarlayalım
-    console.log("Cookie ayarlanıyor...");
+    console.log("Cookie setting...");
     try {
       chrome.cookies.set(
         {
@@ -81,10 +155,10 @@ function fetchCursorUsage(data) {
           sameSite: "no_restriction",
         },
         function (cookie) {
-          console.log("Cookie ayarlandı:", cookie);
+          console.log("Cookie set:", cookie);
 
           // Şimdi isteği yapalım
-          console.log("Fetch isteği yapılıyor...");
+          console.log("Fetch request...");
           fetch(`https://www.cursor.com/api/usage?user=${userId}`, {
             method: "GET",
             headers: {
@@ -103,17 +177,17 @@ function fetchCursorUsage(data) {
             cache: "no-store",
           })
             .then((response) => {
-              console.log("Fetch durum kodu:", response.status);
-              console.log("Fetch yanıt başlıkları:", [...response.headers.entries()]);
+              console.log("Fetch status code:", response.status);
+              console.log("Fetch response headers:", [...response.headers.entries()]);
 
               if (response.ok) {
                 return response.json();
               } else {
-                throw new Error(`API isteği başarısız oldu. Durum kodu: ${response.status}`);
+                throw new Error(`API request failed. Status code: ${response.status}`);
               }
             })
             .then((data) => {
-              console.log("Cursor API yanıtı:", data);
+              console.log("Cursor API response:", data);
 
               try {
                 // Kullanım bilgilerini işle
@@ -140,26 +214,26 @@ function fetchCursorUsage(data) {
                     .map(([key, value]) => `${key}: ${value}`)
                     .join(" ve ");
 
-                  console.log("Kullanım bilgisi:", usageText);
+                  console.log("Usage information:", usageText);
                   resolve({ success: true, usageText });
                 } else {
-                  console.error("Kullanım bilgisi bulunamadı");
-                  resolve({ success: false, error: "Kullanım bilgisi bulunamadı" });
+                  console.error("Usage information not found");
+                  resolve({ success: false, error: "Usage information not found" });
                 }
               } catch (error) {
-                console.error("Yanıt işlenirken hata oluştu:", error);
+                console.error("Error processing response:", error);
                 reject({ success: false, error: error.message });
               }
             })
             .catch((error) => {
-              console.error("Fetch hatası:", error);
-              console.error("Tam hata detayları:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
+              console.error("Fetch error:", error);
+              console.error("Full error details:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
               reject({ success: false, error: error.message });
             });
         }
       );
     } catch (error) {
-      console.error("Cookie ayarlanırken hata oluştu:", error);
+      console.error("Error setting cookie:", error);
       reject({ success: false, error: error.message });
     }
   });

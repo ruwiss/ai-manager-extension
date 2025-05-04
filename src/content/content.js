@@ -108,6 +108,16 @@ function handleViewDetailsClick(event) {
     const dataAddon = trElement.getAttribute("data-addon");
     const dataType = trElement.getAttribute("data-type");
 
+    // Son görüntülenen hesap verilerini global olarak sakla
+    window.lastViewedAccountData = {
+      dataType: dataType,
+      dataToken: dataToken,
+      dataAddon: dataAddon,
+      timestamp: Date.now(),
+    };
+
+    console.log("Saved account data to window.lastViewedAccountData:", `type=${dataType}, token exists=${!!dataToken}, addon=${dataAddon}`);
+
     try {
       // Arka plan scriptine mesaj gönder
       chrome.runtime.sendMessage({
@@ -171,6 +181,7 @@ function handleViewDetailsClick(event) {
       listenForDialogOpenInBrowserButton();
     }, 500);
   } else {
+    console.log("No parent TR element found for view-details click");
     // Arka plan scriptine mesaj gönder
     chrome.runtime.sendMessage({
       action: "viewDetails",
@@ -190,27 +201,130 @@ function listenForDialogOpenInBrowserButton() {
   const dialogOpenInBrowserButton = document.querySelector(".dialog #open-in-browser") || document.querySelector(".modal #open-in-browser") || document.querySelector(".popup #open-in-browser");
 
   if (dialogOpenInBrowserButton) {
-    console.log("Diyalog içinde open-in-browser butonu bulundu");
+    console.log("Dialog open-in-browser button found");
 
-    // Butona preventClick özniteliği ekle
-    if (!isVersionMismatch) {
-      dialogOpenInBrowserButton.setAttribute("preventClick", "true");
-      console.log("Diyalog içindeki open-in-browser butonuna preventClick özniteliği eklendi");
+    // Orijinal onclick fonksiyonunu tamamen kaldır
+    dialogOpenInBrowserButton.onclick = null;
+
+    // Orijinal addEventListener fonksiyonunu saklayalım
+    const originalAddEventListener = dialogOpenInBrowserButton.addEventListener;
+
+    // addEventListener fonksiyonunu override edelim, sitenin yeni event listener eklemesini engeller
+    dialogOpenInBrowserButton.addEventListener = function (type, listener, options) {
+      if (type === "click") {
+        console.log("Website tried to add a click listener to the button, prevented");
+        return;
+      }
+      return originalAddEventListener.call(this, type, listener, options);
+    };
+
+    // Tüm event handler'ları kaldıralım
+    const clone = dialogOpenInBrowserButton.cloneNode(true);
+    dialogOpenInBrowserButton.parentNode.replaceChild(clone, dialogOpenInBrowserButton);
+
+    // Yeni elemana referansı güncelleyelim
+    const newButton = clone;
+
+    // Diyalog içindeki tüm tr elementlerini bulalım ve loglayalım
+    const dialogContainer = newButton.closest(".dialog, .modal, .popup");
+    if (dialogContainer) {
+      const allTrElements = dialogContainer.querySelectorAll("tr");
+      console.log(`Found ${allTrElements.length} TR elements in dialog`);
+
+      // Her tr'nin özelliklerini görelim
+      allTrElements.forEach((tr, index) => {
+        const type = tr.getAttribute("data-type");
+        const token = tr.getAttribute("data-token");
+        console.log(`TR #${index}: type=${type || "not set"}, token exists=${!!token}`);
+      });
+    } else {
+      console.log("Could not find dialog container");
     }
 
-    // Butona tıklama olayı ekle
-    dialogOpenInBrowserButton.addEventListener("click", function (event) {
-      console.log("Diyalog içindeki open-in-browser butonuna tıklandı");
+    // Önce diyalog içindeki type ve token bilgilerini alalım
+    // Bu bilgiler genelde diyalog başlığında veya gizli bir alanda bulunabilir
+    let dataType = null;
+    let dataToken = null;
 
-      // Eğer sürüm uyumlu ise, uyarı göster
-      if (!isVersionMismatch) {
-        console.log("Diyalog içinde: Sürüm uyumlu, preventClick özniteliği eklenmiş durumda");
-      } else {
-        // Sürüm uyumlu değilse, uyarıyı göster
-        showVersionAlert(siteVersion);
-        console.log("Diyalog içinde: Sürüm uyumlu değil, uyarı gösterildi");
+    // TR elementini bulmaya çalışalım
+    const trElement = findParentTr(newButton);
+
+    // TR elementinden type ve token değerlerini almayı deneyelim
+    if (trElement) {
+      dataType = trElement.getAttribute("data-type");
+      dataToken = trElement.getAttribute("data-token");
+      console.log(`Account type from TR: ${dataType || "not found"}, token available: ${dataToken ? "yes" : "no"}`);
+    } else {
+      console.log("TR element not found, trying to find data from dialog context");
+
+      // TR bulunamadıysa, diyalog içinde data-type ve data-token öznitelikleri olan başka elementler arayalım
+      const dialogContainer = newButton.closest(".dialog, .modal, .popup");
+      if (dialogContainer) {
+        const elementsWithType = dialogContainer.querySelectorAll("[data-type]");
+        const elementsWithToken = dialogContainer.querySelectorAll("[data-token]");
+
+        if (elementsWithType.length > 0) {
+          dataType = elementsWithType[0].getAttribute("data-type");
+          console.log(`Found data-type="${dataType}" from another element in dialog`);
+        }
+
+        if (elementsWithToken.length > 0) {
+          dataToken = elementsWithToken[0].getAttribute("data-token");
+          console.log(`Found data-token (exists: ${!!dataToken}) from another element in dialog`);
+        }
       }
-    });
+    }
+
+    // Alternatif olarak, handleViewDetailsClick'te kullanılan dataType ve dataToken değerlerini saklayalım
+    // ve burada kullanalım
+    if ((!dataType || !dataToken) && window.lastViewedAccountData) {
+      dataType = window.lastViewedAccountData.dataType;
+      dataToken = window.lastViewedAccountData.dataToken;
+      console.log(`Using cached account data - type: ${dataType}, token exists: ${!!dataToken}`);
+    }
+
+    // Eğer type ve token değerleri varsa, butona tıklama olayı ekle
+    if (dataType && dataToken) {
+      console.log(`Account data found - type: ${dataType}, token available: ${dataToken ? "yes" : "no"}`);
+
+      // Butona tıklama olayı ekle
+      newButton.addEventListener(
+        "click",
+        function (event) {
+          // Varsayılan davranışı ve event propagasyonu engelle
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+
+          console.log(`Open in browser button clicked for ${dataType} account`);
+
+          // Background service'e mesaj gönder
+          chrome.runtime.sendMessage(
+            {
+              action: "openInBrowser",
+              data: {
+                dataType: dataType,
+                dataToken: dataToken,
+                url: window.location.href,
+              },
+            },
+            function (response) {
+              if (chrome.runtime.lastError) {
+                console.log("Error receiving response:", chrome.runtime.lastError);
+              } else {
+                console.log("Open in browser response:", response);
+              }
+            }
+          );
+
+          // Ek önlem olarak, event'i durdurduktan sonra return false ile fonksiyonu sonlandır
+          return false;
+        },
+        true
+      ); // Capture phase'de event'i yakala
+    } else {
+      console.log("Could not find required data-type or data-token attributes for open-in-browser functionality");
+    }
   }
 }
 
@@ -220,21 +334,40 @@ function listenForDialogOpenInBrowserButton() {
  * @returns {Element|null} - Bulunan <tr> elementi veya null
  */
 function findParentTr(element) {
+  if (!element) {
+    console.log("findParentTr: Input element is null or undefined");
+    return null;
+  }
+
+  console.log("findParentTr: Starting search from element:", element.tagName, element.id ? `#${element.id}` : "");
+
   let currentElement = element;
 
   // En fazla 10 seviye yukarı çık
   for (let i = 0; i < 10; i++) {
-    if (!currentElement) return null;
+    if (!currentElement) {
+      console.log(`findParentTr: Null element at level ${i}`);
+      return null;
+    }
 
     // Eğer <tr> elementine ulaştıysak, onu döndür
     if (currentElement.tagName && currentElement.tagName.toLowerCase() === "tr") {
+      console.log("findParentTr: Found TR element at level", i);
+
+      // TR elementinin data-type ve data-token değerlerini de loglayalım
+      const dataType = currentElement.getAttribute("data-type");
+      const dataToken = currentElement.getAttribute("data-token");
+      console.log(`findParentTr: TR element data - type: ${dataType || "not set"}, token exists: ${!!dataToken}`);
+
       return currentElement;
     }
 
     // Bir üst elemente geç
+    console.log(`findParentTr: Level ${i} - Current: ${currentElement.tagName}${currentElement.id ? `#${currentElement.id}` : ""}, moving to parent`);
     currentElement = currentElement.parentElement;
   }
 
+  console.log("findParentTr: Could not find TR element within 10 levels up");
   return null; // <tr> elementi bulunamadı
 }
 
@@ -294,31 +427,74 @@ function handleOpenInBrowserClick(event) {
   // Varsayılan tıklama davranışını engelle
   event.preventDefault();
   event.stopPropagation();
+  event.stopImmediatePropagation();
 
-  try {
-    // Arka plan scriptine mesaj gönder
-    chrome.runtime.sendMessage({
-      action: "openInBrowser",
-      data: {
-        elementId: event.target.id,
-        url: window.location.href,
-        versionMismatch: isVersionMismatch, // Sürüm uyumsuzluğu bilgisini gönder
-      },
-    });
-  } catch (error) {
-    console.log("Eklenti mesajı gönderilirken hata oluştu:", error.message);
+  // Tıklanan butonun tr elementini bul
+  const openInBrowserButton = event.target.closest("#open-in-browser") || event.target;
+
+  // Orijinal onclick fonksiyonunu tamamen kaldır
+  openInBrowserButton.onclick = null;
+
+  // Web sitesinin olası click handler'larını devre dışı bırak
+  setTimeout(() => {
+    // Elementi klonlayarak tüm handler'ları temizleme
+    if (openInBrowserButton.parentNode) {
+      const clone = openInBrowserButton.cloneNode(true);
+      openInBrowserButton.parentNode.replaceChild(clone, openInBrowserButton);
+
+      // Gerekirse yeni klona bizim click handler'ımızı ekle
+      clone.addEventListener("click", handleOpenInBrowserClick, true);
+    }
+  }, 0);
+
+  const trElement = findParentTr(openInBrowserButton);
+
+  let dataType = null;
+  let dataToken = null;
+
+  // tr elementinden type ve token değerlerini al
+  if (trElement) {
+    dataType = trElement.getAttribute("data-type");
+    dataToken = trElement.getAttribute("data-token");
+    console.log(`Account type: ${dataType}, token available: ${dataToken ? "yes" : "no"}`);
+  } else if (window.lastViewedAccountData) {
+    // Son görüntülenen hesap verilerini kullan
+    dataType = window.lastViewedAccountData.dataType;
+    dataToken = window.lastViewedAccountData.dataToken;
+    console.log(`Using cached account data - type: ${dataType}, token exists: ${!!dataToken}`);
   }
 
-  // Eğer sürüm uyumlu ise, butona preventClick özniteliği ekle
-  if (!isVersionMismatch) {
-    const openInBrowserButton = event.target.closest("#open-in-browser") || event.target;
-    openInBrowserButton.setAttribute("preventClick", "true");
-    console.log("open-in-browser butonuna preventClick özniteliği eklendi");
+  if (dataType && dataToken) {
+    try {
+      console.log(`Sending openInBrowser message for ${dataType} account`);
+      // Arka plan scriptine mesaj gönder
+      chrome.runtime.sendMessage(
+        {
+          action: "openInBrowser",
+          data: {
+            elementId: event.target.id,
+            url: window.location.href,
+            dataType: dataType,
+            dataToken: dataToken,
+          },
+        },
+        function (response) {
+          if (chrome.runtime.lastError) {
+            console.log("Error receiving response:", chrome.runtime.lastError);
+          } else {
+            console.log("Open in browser response:", response);
+          }
+        }
+      );
+    } catch (error) {
+      console.log("Error sending extension message:", error.message);
+    }
   } else {
-    // Sürüm uyumlu değilse, uyarıyı göster
-    showVersionAlert(siteVersion);
-    console.log("Sürüm uyumlu değil, uyarı gösterildi");
+    console.log("Cannot open in browser: missing data-type or data-token");
   }
+
+  // Ek önlem olarak, event'i durdurduktan sonra return false ile fonksiyonu sonlandır
+  return false;
 }
 
 /**
