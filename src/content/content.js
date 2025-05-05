@@ -198,126 +198,121 @@ function handleViewDetailsClick(event) {
  */
 function listenForDialogOpenInBrowserButton() {
   // Diyalog içindeki "open-in-browser" butonunu bul
-  const dialogOpenInBrowserButton = document.querySelector(".dialog #open-in-browser") || document.querySelector(".modal #open-in-browser") || document.querySelector(".popup #open-in-browser");
+  const dialogContainers = Array.from(document.querySelectorAll(".dialog, .modal, .popup, [role='dialog'], [aria-modal='true']")).filter((el) => el !== null);
 
-  if (dialogOpenInBrowserButton) {
-    console.log("Dialog open-in-browser button found");
+  console.log(`${dialogContainers.length} diyalog/modal bulundu`);
 
-    // Orijinal onclick fonksiyonunu tamamen kaldır
-    dialogOpenInBrowserButton.onclick = null;
+  dialogContainers.forEach((dialogContainer) => {
+    // Her container içindeki open-in-browser butonlarını bul
+    const openInBrowserButtons = dialogContainer.querySelectorAll("#open-in-browser, .open-in-browser, [id*='open-in-browser']");
 
-    // Diyalog içindeki tüm tr elementlerini bulalım ve loglayalım
-    const dialogContainer = dialogOpenInBrowserButton.closest(".dialog, .modal, .popup");
-    if (dialogContainer) {
-      const allTrElements = dialogContainer.querySelectorAll("tr");
-      console.log(`Found ${allTrElements.length} TR elements in dialog`);
+    if (openInBrowserButtons.length > 0) {
+      console.log(`${dialogContainer.className || dialogContainer.tagName} içinde ${openInBrowserButtons.length} adet open-in-browser butonu bulundu`);
 
-      // Her tr'nin özelliklerini görelim
-      allTrElements.forEach((tr, index) => {
-        const type = tr.getAttribute("data-type");
-        const token = tr.getAttribute("data-token");
-        const addon = tr.getAttribute("data-addon");
-        console.log(`TR #${index}: type=${type || "not set"}, token exists=${!!token}, addon exists=${!!addon}`);
+      openInBrowserButtons.forEach((button) => {
+        console.log("Dialog open-in-browser button found:", button.id || button.className);
+
+        // Orijinal onclick fonksiyonunu tamamen kaldır
+        if (button.onclick) {
+          console.log("Removing original onclick from dialog button");
+          button.onclick = null;
+        }
+
+        // onclick niteliğini kaldır
+        if (button.hasAttribute("onclick")) {
+          console.log("Removing onclick attribute from dialog button");
+          button.removeAttribute("onclick");
+        }
+
+        // Tüm eski olay dinleyicilerini kaldır (mümkün olduğunca)
+        button.replaceWith(button.cloneNode(true));
+
+        // Yeni butonun referansını al
+        const newButton = dialogContainer.querySelector(`#${button.id}`) || dialogContainer.querySelector(`.${Array.from(button.classList).join(".")}`) || dialogContainer.querySelector(`[id*='${button.id}']`);
+
+        if (newButton) {
+          // Yeni buton üzerine olay dinleyici ekle (CAPTURE PHASE)
+          newButton.addEventListener(
+            "click",
+            function (event) {
+              console.log("Dialog open-in-browser button clicked (capture phase)");
+
+              // Olayı tamamen durdur
+              event.preventDefault();
+              event.stopPropagation();
+              event.stopImmediatePropagation();
+
+              // dialog içindeki type ve token bilgilerini bul
+              let dataType = null;
+              let dataToken = null;
+              let dataAddon = null;
+
+              // TR elementini bulmaya çalışalım
+              const trElement = findParentTr(newButton);
+
+              if (trElement) {
+                dataType = trElement.getAttribute("data-type");
+                dataToken = trElement.getAttribute("data-token");
+                dataAddon = trElement.getAttribute("data-addon");
+                console.log(`Account type from TR: ${dataType || "not found"}, token available: ${dataToken ? "yes" : "no"}, addon available: ${dataAddon ? "yes" : "no"}`);
+              } else if (window.lastViewedAccountData) {
+                dataType = window.lastViewedAccountData.dataType;
+                dataToken = window.lastViewedAccountData.dataToken;
+                dataAddon = window.lastViewedAccountData.dataAddon;
+                console.log(`Using cached account data - type: ${dataType}, token exists: ${!!dataToken}, addon exists: ${!!dataAddon}`);
+              }
+
+              if (dataType) {
+                try {
+                  // Diyalogu gizle
+                  dialogContainer.style.display = "none";
+
+                  // Olası arka plan perdesini kaldır
+                  const backdrop = document.querySelector(".modal-backdrop, .dialog-backdrop, .popup-backdrop");
+                  if (backdrop) backdrop.style.display = "none";
+
+                  console.log(`Sending openInBrowser message for ${dataType} account from dialog button`);
+                  // Arka plan scriptine mesaj gönder
+                  chrome.runtime.sendMessage(
+                    {
+                      action: "openInBrowser",
+                      data: {
+                        elementId: newButton.id,
+                        url: window.location.href,
+                        dataType: dataType,
+                        dataToken: dataToken,
+                        dataAddon: dataAddon,
+                      },
+                    },
+                    function (response) {
+                      if (chrome.runtime.lastError) {
+                        console.log("Error receiving response:", chrome.runtime.lastError);
+                      } else {
+                        console.log("Open in browser response:", response);
+                      }
+                    }
+                  );
+                } catch (error) {
+                  console.log("Error sending extension message:", error.message);
+                }
+              } else {
+                console.log("Cannot open in browser from dialog: missing data-type");
+              }
+
+              return false;
+            },
+            true
+          ); // Capture phase'de event'i yakala - ÖNEMLİ!
+
+          console.log("Dialog button event listener attached in capture phase");
+        } else {
+          console.log("Could not find new button after replacement");
+        }
       });
     } else {
-      console.log("Could not find dialog container");
+      console.log(`${dialogContainer.className || dialogContainer.tagName} içinde open-in-browser butonu bulunamadı`);
     }
-
-    // Önce diyalog içindeki type ve token bilgilerini alalım
-    // Bu bilgiler genelde diyalog başlığında veya gizli bir alanda bulunabilir
-    let dataType = null;
-    let dataToken = null;
-    let dataAddon = null;
-
-    // TR elementini bulmaya çalışalım
-    const trElement = findParentTr(dialogOpenInBrowserButton);
-
-    // TR elementinden type ve token değerlerini almayı deneyelim
-    if (trElement) {
-      dataType = trElement.getAttribute("data-type");
-      dataToken = trElement.getAttribute("data-token");
-      dataAddon = trElement.getAttribute("data-addon");
-      console.log(`Account type from TR: ${dataType || "not found"}, token available: ${dataToken ? "yes" : "no"}, addon available: ${dataAddon ? "yes" : "no"}`);
-    } else {
-      console.log("TR element not found, trying to find data from dialog context");
-
-      // TR bulunamadıysa, diyalog içinde data-type ve data-token öznitelikleri olan başka elementler arayalım
-      const dialogContainer = dialogOpenInBrowserButton.closest(".dialog, .modal, .popup");
-      if (dialogContainer) {
-        const elementsWithType = dialogContainer.querySelectorAll("[data-type]");
-        const elementsWithToken = dialogContainer.querySelectorAll("[data-token]");
-        const elementsWithAddon = dialogContainer.querySelectorAll("[data-addon]");
-
-        if (elementsWithType.length > 0) {
-          dataType = elementsWithType[0].getAttribute("data-type");
-          console.log(`Found data-type="${dataType}" from another element in dialog`);
-        }
-
-        if (elementsWithToken.length > 0) {
-          dataToken = elementsWithToken[0].getAttribute("data-token");
-          console.log(`Found data-token (exists: ${!!dataToken}) from another element in dialog`);
-        }
-
-        if (elementsWithAddon.length > 0) {
-          dataAddon = elementsWithAddon[0].getAttribute("data-addon");
-          console.log(`Found data-addon (exists: ${!!dataAddon}) from another element in dialog`);
-        }
-      }
-    }
-
-    // Alternatif olarak, handleViewDetailsClick'te kullanılan dataType ve dataToken değerlerini saklayalım
-    // ve burada kullanalım
-    if (window.lastViewedAccountData) {
-      if (!dataType) dataType = window.lastViewedAccountData.dataType;
-      if (!dataToken) dataToken = window.lastViewedAccountData.dataToken;
-      if (!dataAddon) dataAddon = window.lastViewedAccountData.dataAddon;
-      console.log(`Using cached account data - type: ${dataType}, token exists: ${!!dataToken}, addon exists: ${!!dataAddon}`);
-    }
-
-    // Eğer type ve token değerleri varsa, butona tıklama olayı ekle
-    if (dataType) {
-      console.log(`Account data found - type: ${dataType}, token available: ${dataToken ? "yes" : "no"}, addon available: ${dataAddon ? "yes" : "no"}`);
-
-      // Butona tıklama olayı ekle
-      dialogOpenInBrowserButton.addEventListener(
-        "click",
-        function (event) {
-          // Varsayılan davranışı ve event propagasyonu engelle
-          event.preventDefault();
-          event.stopPropagation();
-          event.stopImmediatePropagation();
-
-          console.log(`Open in browser button clicked for ${dataType} account`);
-
-          // Background service'e mesaj gönder
-          chrome.runtime.sendMessage(
-            {
-              action: "openInBrowser",
-              data: {
-                dataType: dataType,
-                dataToken: dataToken,
-                dataAddon: dataAddon,
-                url: window.location.href,
-              },
-            },
-            function (response) {
-              if (chrome.runtime.lastError) {
-                console.log("Error receiving response:", chrome.runtime.lastError);
-              } else {
-                console.log("Open in browser response:", response);
-              }
-            }
-          );
-
-          // Ek önlem olarak, event'i durdurduktan sonra return false ile fonksiyonu sonlandır
-          return false;
-        },
-        true
-      ); // Capture phase'de event'i yakala
-    } else {
-      console.log("Could not find required data-type attribute for open-in-browser functionality");
-    }
-  }
+  });
 }
 
 /**
@@ -374,42 +369,66 @@ function listenForOpenInBrowserClicks() {
 
   // ID ile bulunan elementlere event listener ekle
   openInBrowserById.forEach((element) => {
-    element.addEventListener("click", handleOpenInBrowserClick);
+    element.addEventListener("click", handleOpenInBrowserClick, true); // Capture phase'de event'i yakala
   });
 
   // Class ile bulunan elementlere event listener ekle
   openInBrowserByClass.forEach((element) => {
-    element.addEventListener("click", handleOpenInBrowserClick);
+    element.addEventListener("click", handleOpenInBrowserClick, true); // Capture phase'de event'i yakala
   });
 
   // Attribute ile bulunan elementlere event listener ekle
   openInBrowserByAttribute.forEach((element) => {
-    element.addEventListener("click", handleOpenInBrowserClick);
+    element.addEventListener("click", handleOpenInBrowserClick, true); // Capture phase'de event'i yakala
   });
 
-  // Dinamik olarak eklenen elementleri dinle
-  document.addEventListener("click", function (event) {
-    // Tıklanan element veya üst elementlerinden biri open-in-browser ID'sine veya class'ına sahip mi kontrol et
-    let targetElement = event.target;
-    let isOpenInBrowserElement = false;
+  // Dinamik olarak eklenen elementleri dinle - CAPTURE PHASE'DE!
+  document.addEventListener(
+    "click",
+    function (event) {
+      // Tıklanan element veya üst elementlerinden biri open-in-browser ID'sine veya class'ına sahip mi kontrol et
+      let targetElement = event.target;
+      let isOpenInBrowserElement = false;
 
-    // En fazla 5 seviye yukarı çık
-    for (let i = 0; i < 5; i++) {
-      if (!targetElement) break;
+      // En fazla 5 seviye yukarı çık
+      for (let i = 0; i < 5; i++) {
+        if (!targetElement) break;
 
-      if (targetElement.id === "open-in-browser" || targetElement.classList.contains("open-in-browser") || (targetElement.id && targetElement.id.includes("open-in-browser"))) {
-        isOpenInBrowserElement = true;
-        break;
+        if (targetElement.id === "open-in-browser" || targetElement.classList.contains("open-in-browser") || (targetElement.id && targetElement.id.includes("open-in-browser"))) {
+          isOpenInBrowserElement = true;
+          break;
+        }
+
+        targetElement = targetElement.parentElement;
       }
 
-      targetElement = targetElement.parentElement;
-    }
+      // Eğer open-in-browser elementi ise, işle
+      if (isOpenInBrowserElement) {
+        // Diyalog içindeyse özellikle işle, daha agresif bir şekilde olayı durdur
+        const isInDialog = !!targetElement.closest('.dialog, .modal, .popup, [role="dialog"], [aria-modal="true"]');
 
-    // Eğer open-in-browser elementi ise, işle
-    if (isOpenInBrowserElement) {
-      handleOpenInBrowserClick(event);
-    }
-  });
+        console.log(`Open-in-browser element clicked${isInDialog ? " (inside dialog)" : ""}`);
+
+        // Önce varsayılan davranışı engelle
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+
+        // Orijinal onclick fonksiyonunu tamamen kaldır
+        if (targetElement.onclick) {
+          console.log("Removing original onclick function");
+          targetElement.onclick = null;
+        }
+
+        // Sonra fonksiyonu çağır
+        handleOpenInBrowserClick(event);
+
+        // Olayı tamamen durdur
+        return false;
+      }
+    },
+    true
+  ); // Capture phase'de event'i yakala - ÖNEMLİ!
 }
 
 /**
@@ -421,11 +440,35 @@ function handleOpenInBrowserClick(event) {
   event.stopPropagation();
   event.stopImmediatePropagation();
 
+  console.log("handleOpenInBrowserClick çağrıldı");
+
   // Tıklanan butonun tr elementini bul
   const openInBrowserButton = event.target.closest("#open-in-browser") || event.target;
 
   // Orijinal onclick fonksiyonunu tamamen kaldır
-  openInBrowserButton.onclick = null;
+  if (openInBrowserButton.onclick) {
+    console.log("Removing original onclick handler from button");
+    openInBrowserButton.onclick = null;
+  }
+
+  // Olası tüm onclick niteliklerini temizle
+  if (openInBrowserButton.hasAttribute("onclick")) {
+    console.log("Removing onclick attribute from button");
+    openInBrowserButton.removeAttribute("onclick");
+  }
+
+  // Diyalog içerisindeyse, diyalogu gizle
+  const dialogElement = openInBrowserButton.closest('.dialog, .modal, .popup, [role="dialog"], [aria-modal="true"]');
+  if (dialogElement) {
+    console.log("Button is in a dialog, attempting to hide dialog");
+    // Diyalog görünürlüğünü gizle - özgün uygulamanın yöntemine göre değişebilir
+    dialogElement.style.display = "none";
+    // Olası diyalog arka plan perdesi
+    const backdrop = document.querySelector(".modal-backdrop, .dialog-backdrop, .popup-backdrop");
+    if (backdrop) {
+      backdrop.style.display = "none";
+    }
+  }
 
   const trElement = findParentTr(openInBrowserButton);
 
@@ -622,6 +665,41 @@ function fetchCursorUsage(token) {
 function initListeners() {
   listenForViewDetailsClicks();
   listenForOpenInBrowserClicks();
+  listenForDialogOpenInBrowserButton();
+
+  // Diyalog dinamik olarak eklendiğinde de takip et
+  // MutationObserver ile DOM değişikliklerini dinle
+  const observer = new MutationObserver(function (mutations) {
+    mutations.forEach(function (mutation) {
+      if (mutation.addedNodes && mutation.addedNodes.length > 0) {
+        // Yeni eklenen elementler arasında diyalog olup olmadığına bak
+        for (let i = 0; i < mutation.addedNodes.length; i++) {
+          const node = mutation.addedNodes[i];
+          if (node.nodeType === 1) {
+            // ELEMENT_NODE
+            if (node.matches('.dialog, .modal, .popup, [role="dialog"], [aria-modal="true"]')) {
+              console.log("Dinamik dialog eklendi, dinleyicileri yeniden bağla");
+              listenForDialogOpenInBrowserButton();
+            } else if (node.querySelector) {
+              const dialog = node.querySelector('.dialog, .modal, .popup, [role="dialog"], [aria-modal="true"]');
+              if (dialog) {
+                console.log("Dinamik dialog içeren element eklendi, dinleyicileri yeniden bağla");
+                listenForDialogOpenInBrowserButton();
+              }
+            }
+          }
+        }
+      }
+    });
+  });
+
+  // Tüm DOM değişikliklerini dinle
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
+
+  console.log("Sayfa üzerindeki tüm DOM değişiklikleri dinleniyor");
 }
 
 // Hesapları kontrol eden fonksiyon
