@@ -685,17 +685,26 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
             tokenCopyButton.textContent = "Copied!";
             // Buton bir kez kullanıldıktan sonra kalıcı olarak devre dışı bırakılır
             tokenCopyButton.disabled = true;
+
+            // Butonun metin rengini siyah yap (açık temada görünür olması için)
+            tokenCopyButton.style.color = "#22C55E";
           })
           .catch((err) => {
             console.error("Error copying to clipboard:", err);
             tokenCopyButton.textContent = "Error!";
             tokenCopyButton.disabled = false;
+
+            // Hata durumunda metin rengini kırmızı yap (açık temada görünür olması için)
+            tokenCopyButton.style.color = "#FF0000";
           });
       } else {
         // Hata durumunda
         console.error("Failed to refresh token:", message.data.error);
         tokenCopyButton.textContent = "Error!";
         tokenCopyButton.disabled = false;
+
+        // Hata durumunda metin rengini kırmızı yap (açık temada görünür olması için)
+        tokenCopyButton.style.color = "#FF0000";
       }
     }
   }

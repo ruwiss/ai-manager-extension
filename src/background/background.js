@@ -222,7 +222,7 @@ function fetchCursorUsage(data) {
                 if (Object.keys(usageInfo).length > 0) {
                   const usageText = Object.entries(usageInfo)
                     .map(([key, value]) => `${key}: ${value}`)
-                    .join(" ve ");
+                    .join(" & ");
 
                   console.log("Usage information:", usageText);
                   resolve({ success: true, usageText });
